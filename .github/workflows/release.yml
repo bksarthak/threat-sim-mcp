@@ -1,0 +1,44 @@
+name: Release Extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies and PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build PyInstaller Executable
+        run: pyinstaller --onefile --distpath ./bin --workpath ./build python/orchestrator.py
+        
+      - name: Build Go Extension binaries
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -o bin/threat-sim-darwin-arm64 cmd/mcp-server/main.go
+          GOOS=darwin GOARCH=amd64 go build -o bin/threat-sim-darwin-amd64 cmd/mcp-server/main.go
+          GOOS=linux GOARCH=amd64 go build -o bin/threat-sim-linux-amd64 cmd/mcp-server/main.go
+          GOOS=windows GOARCH=amd64 go build -o bin/threat-sim-windows-amd64.exe cmd/mcp-server/main.go
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: bin/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

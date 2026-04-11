@@ -1,0 +1,23 @@
+# Environments
+venv/
+__pycache__/
+*.pyc
+
+# Go
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Project specific
+SESSION.md
+.threatmodel.json
+
+# IDEs
+.idea/
+.vscode/
+*.swp
