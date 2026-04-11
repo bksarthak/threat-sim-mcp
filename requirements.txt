@@ -1,2 +1,2 @@
-networkx
-pyinstaller
+networkx==3.2.1
+pyinstaller==6.4.0

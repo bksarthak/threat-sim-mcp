@@ -1,19 +1,52 @@
-# Gemini CLI Extension: Threat-Sim (MCP)
+<div align="center">
 
-Threat-Sim is a local, privacy-preserving Model Context Protocol (MCP) server for the Gemini CLI. It enables developers and security engineers to perform dynamic, interactive threat modeling against Infrastructure as Code (IaC) directly from the terminal. 
+# 🛡️ Threat-Sim (MCP)
 
-It leverages established DevSecOps tools for parsing and analysis, ensuring accurate architectural representation without exposing sensitive configurations to public LLM endpoints.
+**Agentic, Privacy-Preserving Threat Modeling for Infrastructure as Code**
+
+[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go)](https://golang.org/)
+[![Python Version](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python)](https://python.org/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
+
+*A local Model Context Protocol (MCP) server that empowers Gemini to hunt for complex architectural vulnerabilities in your Terraform—without ever sending raw configurations or sensitive internal IDs to the cloud.*
+
+[Installation](#%EF%B8%8F-installation--setup) •
+[How It Works](#-architecture--privacy-model) •
+[Usage](#-usage--testing) •
+[Security Philosophy](#-security-model)
+
+</div>
 
 ---
 
-## 🚀 What It Does
+## 🚀 Why Threat-Sim?
 
-Threat-Sim bridges the gap between deterministic IaC scanners and probabilistic LLMs. 
-When invoked, it wraps tools like **Checkov** to parse your infrastructure files into a mathematical graph (nodes and edges). Before handing this context to the Gemini model, Threat-Sim intercepts the payload and redacts all sensitive identifiers (like internal hostnames or IP addresses), replacing them with generic markers (e.g., `NODE_0`).
+Threat-Sim bridges the gap between **deterministic IaC scanners** and **probabilistic LLMs**.  
+While static scanners are great at finding basic misconfigurations (e.g., "port 22 is open"), they struggle to piece together complex, multi-hop attack paths. LLMs excel at this lateral reasoning but shouldn't be fed raw, sensitive infrastructure context. 
 
-Gemini then dynamically reasons over this topology to test STRIDE vulnerabilities, simulate lateral movement attacks across security groups, and log confirmed findings directly into a local `.threatmodel.json` tracking file.
+Threat-Sim gives you the best of both worlds by executing parsers locally, sanitizing the resulting architectural graph, and enabling Gemini to perform full STRIDE threat models automatically.
 
-### Architecture Overview
+### ✨ Key Features
+
+- **Zero Data Exfiltration**: Never leak proprietary configurations. All sensitive entities (hostnames, IP addresses, tags) are mathematically redacted into generic markers (e.g., `NODE_0`) before hitting the LLM.
+- **Agentic Analysis**: Move beyond linear checks. Let the AI agent simulate SSRF attacks, pivot across security groups, and discover shadow-admin privilege escalations.
+- **Deterministic Accuracy**: Uses enterprise-grade local parsers (like Checkov) to build a mathematically accurate graph topology. The AI only reasons over the logic, not the parsing.
+- **Provider Agnostic**: Out-of-the-box support for complex attack chains across AWS, GCP, and Azure.
+
+---
+
+## 🎥 Demo
+
+<div align="center">
+  <img src="demo.gif" alt="Threat-Sim Terminal Demo" style="border-radius: 10px;"/>
+</div>
+
+---
+
+## 🧠 Architecture & Privacy Model
+
+Parsing IaC into a graph is a solved mathematical problem. We rely on industry-standard local parsers to build the graph with 100% accuracy, reserving the LLM strictly for what it excels at: high-level security reasoning.
 
 ```mermaid
 sequenceDiagram
@@ -40,74 +73,70 @@ sequenceDiagram
 
 ---
 
-## 🛡️ Design Philosophy
-
-1. **Strict Data Privacy (Zero Exfiltration):** Enterprise environments cannot send raw proprietary configurations, hardcoded internal IPs, or IAM structures to cloud APIs. By parsing locally and passing the graph through our Go middleware, Threat-Sim redacts sensitive entities.
-2. **Deterministic Accuracy:** Parsing IaC into a graph is a solved mathematical problem. We rely on industry-standard local parsers to build the graph with 100% accuracy, reserving the LLM strictly for what it excels at: high-level security reasoning.
-3. **Performance and Cost:** Distilling massive IaC repositories into a strict JSON payload drastically reduces the payload sent to the LLM. 
-
----
-
 ## 🔒 Security Model
 
-Threat-Sim treats all LLM-provided parameters as untrusted input. The Go MCP server enforces:
+Threat-Sim treats all LLM-provided parameters as untrusted input. The Go MCP server acts as an unbypassable policy enforcement point:
 
-* **Path containment** — `target_dir` is validated to reject absolute paths and directory traversal sequences (`..`), preventing the LLM from scanning arbitrary filesystem locations.
-* **Scanner allowlisting** — Only explicitly approved scanner names are accepted.
-* **Full-payload privacy scrubbing** — All string attributes across graph nodes (file paths, bucket names, tags) are redacted before reaching the LLM, not just resource IDs.
-* **Subprocess timeouts** — External processes are killed after 120 seconds to prevent resource exhaustion.
-* **Error sanitization** — Detailed errors are logged locally; only generic messages are returned to the LLM.
-* **Restrictive file permissions** — Output files containing de-sanitized findings are created with `0600` (owner-only).
+* **Path Containment** — Validates `target_dir` to reject absolute paths and directory traversal (`..`), preventing arbitrary filesystem reads.
+* **Scanner Allowlisting** — Strict execution limits; only explicitly approved scanner names (e.g., Checkov) can be invoked.
+* **Full-Payload Privacy Scrubbing** — Redacts all string attributes across graph nodes (file paths, bucket names, tags), not just IDs.
+* **Resource Guardrails** — Subprocesses are killed after 120s to prevent DoS via resource exhaustion.
+* **Restrictive Permissions** — De-sanitized local reports are generated with secure `0600` permissions.
 
 ---
 
 ## 🛠️ Installation & Setup
 
 ### Prerequisites
-* **Checkov:** Must be installed globally on your machine (e.g., `pip install checkov` or `brew install checkov`).
+* **Checkov:** Must be installed on your host system (`pip install checkov` or `brew install checkov`).
 * **Gemini CLI:** v0.26.0+
-* **Go 1.22+ & Python 3.11+** (Only required if building from source)
+* **Go 1.22+ & Python 3.11+** *(Only if building from source)*
 
-### Building the Extension
-Threat-Sim packages its Python graph dependencies into a standalone binary using PyInstaller, meaning you won't need to manage virtual environments to run it.
+### 1️⃣ Build from Source
+Threat-Sim packages its Python graph dependencies into a standalone binary using PyInstaller. You won't need to manage virtual environments.
 
-1. Clone the repository and build the binaries:
-   ```bash
-   make build
-   ```
-   *(This will create `bin/threat-sim` and `bin/orchestrator`)*
+```bash
+git clone https://github.com/your-username/threat-sim-mcp.git
+cd threat-sim-mcp
+make build
+```
+*(This will generate `bin/threat-sim` and `bin/orchestrator`)*
 
-2. Install the extension using the Gemini CLI:
-   ```bash
-   gemini extension install ./
-   ```
+### 2️⃣ Install the Extension
+Install it directly into your Gemini CLI context:
+
+```bash
+gemini extension install ./
+```
 
 ---
 
 ## 🕹️ Usage & Testing
 
-Threat-Sim thrives on discovering complex architectural vulnerabilities that basic linear logic fails to pinpoint. We've included several adversarial scenarios inside `examples/` for you to test the agent on:
+Threat-Sim comes loaded with adversarial intentionally vulnerable IaC labs to test its capabilities:
 
-1. **`examples/vulnerable-aws`**: A standard public exposure test containing highly permissive security groups and public bucket leakage.
-2. **`examples/complex-lateral-movement`**: Simulates an SSRF -> IMDSv1 context theft chain where a compromised web server leverages an overly permissive IAM role to hop horizontally into a heavily locked-down internal S3 Data Lake.
-3. **`examples/privilege-escalation`**: A shadow-admin vector simulating a publicly exposed Lambda URL that possesses unchecked `iam:PassRole` abilities pointing to `ec2:RunInstances`.
-4. **`examples/vulnerable-gcp`**: Demonstrates provider agnosticism by simulating a GCP Project Editor privilege escalation via a public unauthenticated Google Cloud Function.
+1. **`examples/vulnerable-aws`**: Standard public exposure (highly permissive security groups + public buckets).
+2. **`examples/complex-lateral-movement`**: Simulates an SSRF -> IMDSv1 context theft chain hopping horizontally into an internal Data Lake.
+3. **`examples/privilege-escalation`**: A shadow-admin vector leveraging an exposed Lambda with unchecked `iam:PassRole`.
+4. **`examples/vulnerable-gcp`**: Privilege escalation via an unauthenticated Google Cloud Function to Project Editor.
 
-Run the following command to kick off an interactive investigation into the lateral movement chain:
+**Kick off an investigation:**
+
 ```bash
 gemini --mcp threat-sim "Generate an architecture graph for the IaC in ./examples/complex-lateral-movement using checkov. If an attacker breaches the internet-facing ALB and performs an SSRF attack against the web server, map the exact access paths they can exploit to exfiltrate the 'internal-financial-records-2026' bucket. Log these findings."
 ```
 
 ---
 
-## 🏗️ Development
+## 🤝 Contributing & Development
 
-Threat-Sim utilizes a layered architecture:
-* `/cmd/mcp-server`: Main Go entry point handling the MCP standard I/O protocol loops.
-* `/pkg/sanitizer`: Highly performant `sync.RWMutex` bidirectional redaction maps.
-* `/python/orchestrator`: Wrapper for external CLI tools yielding unified NetworkX data structures.
+We welcome PRs for new parsers, better sanitization heuristics, and extended agentic tools!
 
-Run the test suite:
+* `/cmd/mcp-server`: Main Go entry point serving standard MCP JSON-RPC.
+* `/pkg/sanitizer`: Highly performant `sync.RWMutex` bidirectional redaction.
+* `/python/orchestrator`: Wrapper for external tools yielding NetworkX graphs.
+
+Run tests:
 ```bash
 go test ./pkg/...
 python3 -m unittest discover -s tests
@@ -115,5 +144,11 @@ python3 -m unittest discover -s tests
 
 ---
 
-> ⚡ **Built with Google Antigravity**
-> *This project was built from concept to launch in a fraction of the standard wall-to-wall development time using Google Antigravity. It concretely demonstrates how AI accelerates complex security engineering and integration work without sacrificing architectural quality.*
+<br>
+
+<div align="center">
+
+> ⚡ **Built with Google Antigravity**  
+> *This project was built from concept to launch in a fraction of standard development time using Antigravity, demonstrating how AI accelerates complex security engineering workflows without sacrificing foundational security principles.*
+
+</div>
