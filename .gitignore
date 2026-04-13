@@ -19,6 +19,8 @@ bin/
 # Project specific
 SESSION.md
 .threatmodel.json
+record.sh
+mock_demo.sh
 
 # IDEs
 .idea/
