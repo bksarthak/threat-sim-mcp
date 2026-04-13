@@ -9,8 +9,9 @@ class ScannerAdapter(ABC):
     graph format that can be consumed by NetworkX and the orchestrator.
     """
 
-    def __init__(self, raw_data: Dict[str, Any]):
+    def __init__(self, raw_data: Dict[str, Any], target_dir: str = "."):
         self.raw_data = raw_data
+        self.target_dir = target_dir
 
     @abstractmethod
     def parse(self) -> None:

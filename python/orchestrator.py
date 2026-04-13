@@ -38,7 +38,7 @@ def run_checkov(target_dir: str) -> Dict[str, Any]:
 def generate_graph(target_dir: str, scanner: str) -> None:
     if scanner.lower() == "checkov":
         raw_data = run_checkov(target_dir)
-        adapter = CheckovAdapter(raw_data)
+        adapter = CheckovAdapter(raw_data, target_dir)
         adapter.parse()
         graph_dict = adapter.get_graph_dict()
         
@@ -53,7 +53,7 @@ def simulate_path(target_dir: str, scanner: str, source: str, target: str) -> No
     # In a production environment with large IaC, we'd persist the graph state.
     if scanner.lower() == "checkov":
         raw_data = run_checkov(target_dir)
-        adapter = CheckovAdapter(raw_data)
+        adapter = CheckovAdapter(raw_data, target_dir)
         adapter.parse()
         graph_dict = adapter.get_graph_dict()
         
