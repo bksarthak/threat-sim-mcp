@@ -127,7 +127,7 @@ func sendResponse(id interface{}, result interface{}, err *RPCError) {
 func main() {
 	// Setup logging to stderr since stdout is used for MCP protocol
 	log.SetOutput(os.Stderr)
-	log.Println("Starting Threat-Sim MCP Server")
+	log.Println("Starting Threat-Sim MCP Server (Red/Blue Swarm enabled)")
 
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0), 10*1024*1024) // 10MB max to prevent silent truncation
@@ -196,12 +196,19 @@ func executeTool(name string, argsRaw []byte) (string, error) {
 		}
 		return handleGenerateGraph(params)
 
-	case "simulate_access_path":
-		var params mcp.SimulateAccessPathParams
+	case "red_team_attack_paths":
+		var params mcp.RedTeamAttackPathsParams
 		if err := json.Unmarshal(argsRaw, &params); err != nil {
 			return "", fmt.Errorf("invalid arguments: %v", err)
 		}
-		return handleSimulatePath(params)
+		return handleRedTeamAttack(params)
+
+	case "blue_team_evaluate_mitigation":
+		var params mcp.BlueTeamEvaluateMitigationParams
+		if err := json.Unmarshal(argsRaw, &params); err != nil {
+			return "", fmt.Errorf("invalid arguments: %v", err)
+		}
+		return handleBlueTeamMitigate(params)
 
 	case "log_threat_finding":
 		var params mcp.LogThreatFindingParams
@@ -218,16 +225,13 @@ func executeTool(name string, argsRaw []byte) (string, error) {
 func getOrchestratorPath() string {
 	exePath, err := os.Executable()
 	if err != nil {
-		// Fallback to local script if not running compiled
 		cwd, _ := os.Getwd()
 		return filepath.Join(cwd, "python", "orchestrator.py")
 	}
-	// Assume the orchestrator binary is in the same directory as the Go binary
 	return filepath.Join(filepath.Dir(exePath), "orchestrator")
 }
 
 func handleGenerateGraph(params mcp.GenerateArchitectureGraphParams) (string, error) {
-	// Security: Validate inputs before any execution
 	if err := validateTargetDir(params.TargetDir); err != nil {
 		return "", err
 	}
@@ -235,12 +239,9 @@ func handleGenerateGraph(params mcp.GenerateArchitectureGraphParams) (string, er
 		return "", err
 	}
 
-	// Persist target directory for future simulate calls
 	globalTargetDir = params.TargetDir
-
 	orchestrator := getOrchestratorPath()
 
-	// Security: Enforce subprocess timeout to prevent indefinite hangs
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -255,15 +256,12 @@ func handleGenerateGraph(params mcp.GenerateArchitectureGraphParams) (string, er
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		// Security: Log full details locally, return generic error to the LLM
 		log.Printf("orchestrator generate error: %v, stderr: %s", err, stderr.String())
 		return "", fmt.Errorf("graph generation failed: internal processing error")
 	}
 
 	rawOutput := strings.TrimSpace(stdout.String())
 
-	// Privacy: Extract ALL string values from nodes for comprehensive redaction,
-	// not just the 'id' field. This covers file_path, bucket names, tags, etc.
 	var graphDict map[string]interface{}
 	if err := json.Unmarshal([]byte(rawOutput), &graphDict); err == nil {
 		identifiers := extractSensitiveStrings(graphDict)
@@ -274,7 +272,7 @@ func handleGenerateGraph(params mcp.GenerateArchitectureGraphParams) (string, er
 	return rawOutput, nil
 }
 
-func handleSimulatePath(params mcp.SimulateAccessPathParams) (string, error) {
+func handleRedTeamAttack(params mcp.RedTeamAttackPathsParams) (string, error) {
 	// Restore sanitized IDs back to real IDs before passing to python
 	realSource := globalSanitizer.Restore(params.SourceNode)
 	realTarget := globalSanitizer.Restore(params.TargetNode)
@@ -293,18 +291,17 @@ func handleSimulatePath(params mcp.SimulateAccessPathParams) (string, error) {
 
 	var cmd *exec.Cmd
 	if strings.HasSuffix(orchestrator, ".py") {
-		cmd = exec.CommandContext(ctx, "python3", orchestrator, "--action", "simulate", "--dir", targetDir, "--source", realSource, "--target", realTarget)
+		cmd = exec.CommandContext(ctx, "python3", orchestrator, "--action", "attack", "--dir", targetDir, "--source", realSource, "--target", realTarget)
 	} else {
-		cmd = exec.CommandContext(ctx, orchestrator, "--action", "simulate", "--dir", targetDir, "--source", realSource, "--target", realTarget)
+		cmd = exec.CommandContext(ctx, orchestrator, "--action", "attack", "--dir", targetDir, "--source", realSource, "--target", realTarget)
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		// Security: Log full details locally, return generic error to the LLM
-		log.Printf("orchestrator simulate error: %v, stderr: %s", err, stderr.String())
-		return "", fmt.Errorf("path simulation failed: internal processing error")
+		log.Printf("RedTeam orchestrator attack error: %v, stderr: %s", err, stderr.String())
+		return "", fmt.Errorf("red team attack simulation failed: internal processing error")
 	}
 
 	rawOutput := strings.TrimSpace(stdout.String())
@@ -312,7 +309,69 @@ func handleSimulatePath(params mcp.SimulateAccessPathParams) (string, error) {
 	// Sanitize output back so Gemini only sees NODE_X
 	var result map[string]interface{}
 	if err := json.Unmarshal([]byte(rawOutput), &result); err == nil {
-		// Re-sanitize any paths returned
+		if pathsRaw, ok := result["paths"]; ok {
+			if pathsList, ok := pathsRaw.([]interface{}); ok {
+				sanitizedPaths := [][]string{}
+				for _, p := range pathsList {
+					if pathNodes, ok := p.([]interface{}); ok {
+						sanitizedPath := []string{}
+						for _, node := range pathNodes {
+							if nodeStr, ok := node.(string); ok {
+								sanitizedPath = append(sanitizedPath, globalSanitizer.Sanitize(nodeStr))
+							}
+						}
+						sanitizedPaths = append(sanitizedPaths, sanitizedPath)
+					}
+				}
+				result["paths"] = sanitizedPaths
+			}
+		}
+		sanitizedJson, _ := json.Marshal(result)
+		return string(sanitizedJson), nil
+	}
+
+	return rawOutput, nil
+}
+
+func handleBlueTeamMitigate(params mcp.BlueTeamEvaluateMitigationParams) (string, error) {
+	// Restore sanitized IDs back to real IDs before passing to python
+	realSource := globalSanitizer.Restore(params.SourceNode)
+	realTarget := globalSanitizer.Restore(params.TargetNode)
+	realCutFrom := globalSanitizer.Restore(params.CutEdgeFrom)
+	realCutTo := globalSanitizer.Restore(params.CutEdgeTo)
+
+	// Use persisted target directory
+	targetDir := globalTargetDir
+	if targetDir == "" {
+		targetDir = "."
+	}
+
+	orchestrator := getOrchestratorPath()
+
+	// Security: Enforce subprocess timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	var cmd *exec.Cmd
+	if strings.HasSuffix(orchestrator, ".py") {
+		cmd = exec.CommandContext(ctx, "python3", orchestrator, "--action", "simulate", "--dir", targetDir, "--source", realSource, "--target", realTarget, "--cut-from", realCutFrom, "--cut-to", realCutTo)
+	} else {
+		cmd = exec.CommandContext(ctx, orchestrator, "--action", "simulate", "--dir", targetDir, "--source", realSource, "--target", realTarget, "--cut-from", realCutFrom, "--cut-to", realCutTo)
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		log.Printf("BlueTeam orchestrator simulate error: %v, stderr: %s", err, stderr.String())
+		return "", fmt.Errorf("blue team mitigation simulation failed: internal processing error")
+	}
+
+	rawOutput := strings.TrimSpace(stdout.String())
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(rawOutput), &result); err == nil {
+		// Re-sanitize any remaining patch returned
 		if pathRaw, ok := result["path"]; ok {
 			if pathList, ok := pathRaw.([]interface{}); ok {
 				sanitizedPath := []string{}
@@ -332,10 +391,8 @@ func handleSimulatePath(params mcp.SimulateAccessPathParams) (string, error) {
 }
 
 func handleLogThreatFinding(params mcp.LogThreatFindingParams) (string, error) {
-	// Restore the real ID before logging
 	realID := globalSanitizer.Restore(params.NodeID)
 
-	// Security: Sanitize all LLM-provided strings before writing to disk
 	entry := map[string]string{
 		"category":   sanitizeUserInput(params.StrideCategory, 256),
 		"node":       realID,
@@ -344,7 +401,6 @@ func handleLogThreatFinding(params mcp.LogThreatFindingParams) (string, error) {
 
 	b, _ := json.MarshalIndent(entry, "", "  ")
 
-	// Security: Owner-only permissions (0600) — findings contain real resource IDs
 	f, err := os.OpenFile(".threatmodel.json", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return "", fmt.Errorf("failed to open threatmodel file: %v", err)
@@ -355,5 +411,5 @@ func handleLogThreatFinding(params mcp.LogThreatFindingParams) (string, error) {
 		return "", fmt.Errorf("failed to write finding: %v", err)
 	}
 
-	return fmt.Sprintf("Successfully logged threat finding for node %s", params.NodeID), nil
+	return fmt.Sprintf("✅ Successfully logged threat finding for node %s", params.NodeID), nil
 }

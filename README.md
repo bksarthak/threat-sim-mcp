@@ -53,22 +53,24 @@ sequenceDiagram
     participant CLI as Gemini CLI
     participant Go as MCP Server (Go)
     participant Py as Orchestrator (PyInstaller)
-    participant Scanner as Checkov
     
-    CLI->>Go: MCP Tool Call: generate_architecture_graph
-    Go->>Py: Execute binary /w target dir
-    Py->>Scanner: Subprocess: checkov -f ./dir -o json
-    Scanner-->>Py: Raw IaC JSON
-    Py-->>Go: Normalized NetworkX Graph (JSON stdout)
-    
-    Note over Go: Privacy Middleware Intercepts
+    CLI->>Go: generate_architecture_graph
+    Go->>Py: Execute python-hcl2 natively
+    Py-->>Go: Normalized NetworkX Graph
     Note over Go: Redacts Sensitive IDs (e.g., prod-db -> NODE_1)
-    
     Go-->>CLI: Sanitized Structural Graph
-    CLI->>CLI: LLM Reasons using STRIDE
-    CLI->>Go: MCP Tool Call: simulate_access_path(NODE_1, NODE_2)
-    Go->>Go: Restores NODE_1 -> prod-db
-    Go->>Py: Subprocess: pathfinder(prod-db, ...)
+    
+    Note over CLI: Multi-Agent Swarm Orchestration
+    
+    CLI->>Go: [Red Team Agent] red_team_attack_paths(NODE_1, NODE_2)
+    Go->>Py: Subprocess: pathfinder.find_all_attack_paths
+    Py-->>Go: All transitive attack vectors
+    
+    CLI->>Go: [Blue Team Agent] blue_team_evaluate_mitigation(NODE_1, NODE_2, CUT_FROM, CUT_TO)
+    Go->>Py: Subprocess: Temporarily severs graph edge and tests reachability
+    Py-->>Go: Mitigation Result (Boolean)
+    
+    CLI->>Go: log_threat_finding(Mitigation Strategy)
 ```
 
 ---
