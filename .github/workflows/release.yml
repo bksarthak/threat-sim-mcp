@@ -37,7 +37,7 @@ jobs:
           GOOS=windows GOARCH=amd64 go build -o bin/threat-sim-windows-amd64.exe cmd/mcp-server/main.go
 
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           files: bin/*
         env:
