@@ -77,16 +77,45 @@ func (s *Sanitizer) SanitizePayload(payload string, identifiers []string) string
 	return sanitizedPayload
 }
 
+// SanitizeKnown replaces any already-registered sensitive identifiers in payload
+// with their safe NODE_X markers, sorted longest-first to avoid partial matches.
+func (s *Sanitizer) SanitizeKnown(payload string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	keys := make([]string, 0, len(s.sensitiveToID))
+	for sensitive := range s.sensitiveToID {
+		keys = append(keys, sensitive)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return len(keys[i]) > len(keys[j])
+	})
+
+	sanitized := payload
+	for _, sensitive := range keys {
+		sanitized = strings.ReplaceAll(sanitized, sensitive, s.sensitiveToID[sensitive])
+	}
+	return sanitized
+}
+
 // RestorePayload takes a sanitized payload and replaces all safe identifiers
-// back with their original sensitive strings.
+// back with their original sensitive strings (sorted longest-first so NODE_1
+// does not corrupt NODE_10).
 func (s *Sanitizer) RestorePayload(payload string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	safeIDs := make([]string, 0, len(s.idToSensitive))
+	for safeID := range s.idToSensitive {
+		safeIDs = append(safeIDs, safeID)
+	}
+	sort.Slice(safeIDs, func(i, j int) bool {
+		return len(safeIDs[i]) > len(safeIDs[j])
+	})
+
 	restoredPayload := payload
-	// Iterate over the known mappings and replace safe IDs with sensitive ones.
-	for safeID, sensitive := range s.idToSensitive {
-		restoredPayload = strings.ReplaceAll(restoredPayload, safeID, sensitive)
+	for _, safeID := range safeIDs {
+		restoredPayload = strings.ReplaceAll(restoredPayload, safeID, s.idToSensitive[safeID])
 	}
 	return restoredPayload
 }

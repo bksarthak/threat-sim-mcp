@@ -98,7 +98,7 @@ Threat-Sim treats all LLM-provided parameters as untrusted input. The Go MCP ser
 Threat-Sim packages its Python graph dependencies into a standalone binary using PyInstaller. You won't need to manage virtual environments.
 
 ```bash
-git clone https://github.com/your-username/threat-sim-mcp.git
+git clone https://github.com/bksarthak/threat-sim-mcp.git
 cd threat-sim-mcp
 make build
 ```

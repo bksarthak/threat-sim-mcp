@@ -31,7 +31,7 @@ class Pathfinder:
                 # Add edge with all its attributes
                 self.graph.add_edge(source, target, **edge)
 
-    def find_all_attack_paths(self, source_node: str, target_node: str, depth_limit: int = 5) -> Dict[str, Any]:
+    def find_all_attack_paths(self, source_node: str, target_node: str, depth_limit: int = 10) -> Dict[str, Any]:
         """
         [Red Team] Discovers all simple paths up to a specified depth limit.
         This allows the Red agent to identify secondary pivot points if the shortest path is patched.

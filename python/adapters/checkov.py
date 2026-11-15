@@ -57,17 +57,21 @@ class CheckovAdapter(ScannerAdapter):
 
     def _extract_edges(self) -> None:
         node_ids = {n["id"] for n in self.nodes}
-        
+        base_dir = os.path.abspath(self.target_dir)
+
         unique_files = set()
         for check in self.results:
             filepath = check.get("file_path")
             if filepath and filepath != "unknown":
                 clean_path = filepath.lstrip("/")
-                abs_path = os.path.abspath(os.path.join(self.target_dir, clean_path))
-                
-                # Path traversal mitigation
-                if abs_path.startswith(os.path.abspath(self.target_dir)):
-                    unique_files.add(abs_path)
+                abs_path = os.path.abspath(os.path.join(base_dir, clean_path))
+
+                # Path traversal mitigation using commonpath (prevents sibling-prefix bypass)
+                try:
+                    if os.path.commonpath([base_dir, abs_path]) == base_dir:
+                        unique_files.add(abs_path)
+                except ValueError:
+                    continue
 
         for abs_path in unique_files:
             if not os.path.exists(abs_path):
@@ -75,7 +79,7 @@ class CheckovAdapter(ScannerAdapter):
             try:
                 with open(abs_path, 'r') as file:
                     tf_dict = hcl2.load(file)
-                    
+
                     if "resource" in tf_dict:
                         for res in tf_dict["resource"]:
                             for res_type, res_blocks in res.items():
@@ -83,13 +87,21 @@ class CheckovAdapter(ScannerAdapter):
                                     current_id = f"{res_type}.{res_name}"
                                     if current_id in node_ids:
                                         self._find_edges_in_dict(current_id, res_attrs, node_ids)
-            except Exception as e:
+                                        self._enrich_attack_edges(current_id, res_type, res_attrs, node_ids)
+            except Exception:
                 # Tolerate parse errors for non-standard files or syntax issues
                 pass
 
+    def _add_edge(self, source: str, target: str, edge_type: str) -> None:
+        if source == target:
+            return
+        edge = {"source": source, "target": target, "type": edge_type}
+        if edge not in self.edges:
+            self.edges.append(edge)
+
     def _find_edges_in_dict(self, current_id: str, data: Any, node_ids: set) -> None:
         if isinstance(data, dict):
-            for k, v in data.items():
+            for _, v in data.items():
                 self._find_edges_in_dict(current_id, v, node_ids)
         elif isinstance(data, list):
             for item in data:
@@ -97,9 +109,53 @@ class CheckovAdapter(ScannerAdapter):
         elif isinstance(data, str):
             for nid in node_ids:
                 if nid != current_id and nid in data:
-                    edge = {"from_node": current_id, "to_node": nid, "type": "references"}
-                    if edge not in self.edges:
-                        self.edges.append(edge)
+                    self._add_edge(current_id, nid, "references")
+
+    def _enrich_attack_edges(self, current_id: str, res_type: str, res_attrs: Dict[str, Any], node_ids: set) -> None:
+        """
+        Adds attacker-flow directional edges on top of raw Terraform references:
+        - Security group ingress: referenced SG -> current SG (network_ingress)
+        - Resource SG attachment: SG -> resource (network_exposure)
+        - IAM role policy attachment: role -> policy (iam_policy_grant)
+        - IAM wildcard/service policy: policy -> matching target resources (wildcard_access)
+        """
+        if not isinstance(res_attrs, dict):
+            return
+
+        if res_type == "aws_security_group":
+            for ingress_rule in res_attrs.get("ingress", []):
+                if isinstance(ingress_rule, dict):
+                    for sg_ref in ingress_rule.get("security_groups", []):
+                        if isinstance(sg_ref, str):
+                            for nid in node_ids:
+                                if nid.startswith("aws_security_group.") and nid in sg_ref:
+                                    self._add_edge(nid, current_id, "network_ingress")
+
+        for sg_key in ("security_groups", "vpc_security_group_ids"):
+            for sg_ref in res_attrs.get(sg_key, []):
+                if isinstance(sg_ref, str):
+                    for nid in node_ids:
+                        if nid.startswith("aws_security_group.") and nid in sg_ref:
+                            self._add_edge(nid, current_id, "network_exposure")
+
+        if res_type in ("aws_iam_role_policy", "aws_iam_role_policy_attachment"):
+            role_ref = res_attrs.get("role", "")
+            if isinstance(role_ref, str):
+                for nid in node_ids:
+                    if nid.startswith("aws_iam_role.") and nid in role_ref:
+                        self._add_edge(nid, current_id, "iam_policy_grant")
+
+        if res_type in ("aws_iam_role_policy", "aws_iam_policy"):
+            policy_raw = res_attrs.get("policy")
+            policy_str = json.dumps(policy_raw) if not isinstance(policy_raw, str) else policy_raw
+            if policy_str and "Allow" in policy_str and ('"*"' in policy_str or "'*'" in policy_str or ":*" in policy_str):
+                for nid in node_ids:
+                    if nid.startswith(("aws_s3_bucket.", "aws_db_instance.", "aws_dynamodb_table.", "aws_secretsmanager_secret.")):
+                        if "s3:" in policy_str or '"Action": "*"' in policy_str:
+                            if nid.startswith("aws_s3_bucket."):
+                                self._add_edge(current_id, nid, "wildcard_access")
+                        else:
+                            self._add_edge(current_id, nid, "wildcard_access")
 
     def get_nodes(self) -> List[Dict[str, Any]]:
         return self.nodes

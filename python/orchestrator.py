@@ -32,45 +32,25 @@ def run_checkov(target_dir: str) -> Dict[str, Any]:
         print(json.dumps({"error": f"Failed to parse Checkov output: {e}"}))
         sys.exit(1)
 
-def generate_graph(target_dir: str, scanner: str) -> None:
-    if scanner.lower() == "checkov":
-        raw_data = run_checkov(target_dir)
-        adapter = CheckovAdapter(raw_data, target_dir)
-        adapter.parse()
-        graph_dict = adapter.get_graph_dict()
-        
-        print(json.dumps(graph_dict))
-    else:
+def _build_graph(target_dir: str, scanner: str) -> Dict[str, Any]:
+    if scanner.lower() != "checkov":
         print(json.dumps({"error": f"Unsupported scanner: {scanner}"}))
         sys.exit(1)
+    raw_data = run_checkov(target_dir)
+    adapter = CheckovAdapter(raw_data, target_dir)
+    adapter.parse()
+    return adapter.get_graph_dict()
+
+def generate_graph(target_dir: str, scanner: str) -> None:
+    print(json.dumps(_build_graph(target_dir, scanner)))
 
 def attack_paths(target_dir: str, scanner: str, source: str, target: str) -> None:
-    if scanner.lower() == "checkov":
-        raw_data = run_checkov(target_dir)
-        adapter = CheckovAdapter(raw_data, target_dir)
-        adapter.parse()
-        graph_dict = adapter.get_graph_dict()
-        
-        pathfinder = Pathfinder(graph_dict)
-        result = pathfinder.find_all_attack_paths(source, target)
-        print(json.dumps(result))
-    else:
-        print(json.dumps({"error": f"Unsupported scanner: {scanner}"}))
-        sys.exit(1)
+    pathfinder = Pathfinder(_build_graph(target_dir, scanner))
+    print(json.dumps(pathfinder.find_all_attack_paths(source, target)))
 
 def simulate_path(target_dir: str, scanner: str, source: str, target: str, cut_from: Optional[str] = None, cut_to: Optional[str] = None) -> None:
-    if scanner.lower() == "checkov":
-        raw_data = run_checkov(target_dir)
-        adapter = CheckovAdapter(raw_data, target_dir)
-        adapter.parse()
-        graph_dict = adapter.get_graph_dict()
-        
-        pathfinder = Pathfinder(graph_dict)
-        result = pathfinder.simulate_access_path(source, target, cut_from, cut_to)
-        print(json.dumps(result))
-    else:
-        print(json.dumps({"error": f"Unsupported scanner: {scanner}"}))
-        sys.exit(1)
+    pathfinder = Pathfinder(_build_graph(target_dir, scanner))
+    print(json.dumps(pathfinder.simulate_access_path(source, target, cut_from, cut_to)))
 
 def main():
     parser = argparse.ArgumentParser(description="Threat-Sim Python Orchestrator")

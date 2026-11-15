@@ -72,7 +72,7 @@ func GetRegisteredTools() []Tool {
 					},
 					"scanner": {
 						Type:        "string",
-						Description: "The tool to use (e.g., 'checkov', 'trivy').",
+						Description: "The tool to use (currently 'checkov').",
 					},
 				},
 				Required: []string{"target_dir", "scanner"},

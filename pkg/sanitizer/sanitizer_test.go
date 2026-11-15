@@ -32,3 +32,23 @@ func TestSanitizer(t *testing.T) {
 		t.Errorf("Payload was not restored properly: %s", restoredPayload)
 	}
 }
+
+func TestRestorePayloadLongestFirstAndSanitizeKnown(t *testing.T) {
+	s := New()
+	var ids []string
+	for i := 0; i < 12; i++ {
+		ids = append(ids, s.Sanitize("resource-"+string(rune('a'+i))))
+	}
+	// Ensure NODE_10 is not corrupted by NODE_1
+	payload := ids[1] + " -> " + ids[10]
+	restored := s.RestorePayload(payload)
+	if restored != "resource-b -> resource-k" {
+		t.Errorf("Expected 'resource-b -> resource-k', got %q", restored)
+	}
+
+	errMsg := "Source node 'resource-k' not found"
+	sanitizedErr := s.SanitizeKnown(errMsg)
+	if strings.Contains(sanitizedErr, "resource-k") || !strings.Contains(sanitizedErr, "NODE_10") {
+		t.Errorf("SanitizeKnown failed to redact resource-k: %q", sanitizedErr)
+	}
+}
