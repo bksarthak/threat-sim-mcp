@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Dynamic threat modeling graph analyzer for Infrastructure as Code",
   "author": "Sunny",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "entrypoint": {
     "type": "mcp",
     "command": "./bin/threat-sim"

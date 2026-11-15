@@ -36,10 +36,18 @@ type GenerateArchitectureGraphParams struct {
 	Scanner   string `json:"scanner"`
 }
 
-// SimulateAccessPathParams represents arguments for the simulate_access_path tool.
-type SimulateAccessPathParams struct {
+// RedTeamAttackPathsParams represents arguments for the red_team_attack_paths tool.
+type RedTeamAttackPathsParams struct {
 	SourceNode string `json:"source_node"`
 	TargetNode string `json:"target_node"`
+}
+
+// BlueTeamEvaluateMitigationParams represents arguments for the blue_team_evaluate_mitigation tool.
+type BlueTeamEvaluateMitigationParams struct {
+	SourceNode  string `json:"source_node"`
+	TargetNode  string `json:"target_node"`
+	CutEdgeFrom string `json:"cut_edge_from"`
+	CutEdgeTo   string `json:"cut_edge_to"`
 }
 
 // LogThreatFindingParams represents arguments for the log_threat_finding tool.
@@ -64,33 +72,59 @@ func GetRegisteredTools() []Tool {
 					},
 					"scanner": {
 						Type:        "string",
-						Description: "The tool to use (e.g., 'checkov', 'trivy').",
+						Description: "The tool to use (currently 'checkov').",
 					},
 				},
 				Required: []string{"target_dir", "scanner"},
 			},
 		},
 		{
-			Name:        "simulate_access_path",
-			Description: "Queries the local Python graph to determine if a network or IAM path exists between two nodes.",
+			Name:        "red_team_attack_paths",
+			Description: "As the Red Team, queries the architecture to discover ALL potential lateral movement vectors up to depth 5 between two nodes.",
 			InputSchema: InputSchema{
 				Type: "object",
 				Properties: map[string]Property{
 					"source_node": {
 						Type:        "string",
-						Description: "The sanitized ID of the starting node.",
+						Description: "The sanitized ID of the starting node (attacker foothold).",
 					},
 					"target_node": {
 						Type:        "string",
-						Description: "The sanitized ID of the destination node.",
+						Description: "The sanitized ID of the destination node (target asset).",
 					},
 				},
 				Required: []string{"source_node", "target_node"},
 			},
 		},
 		{
+			Name:        "blue_team_evaluate_mitigation",
+			Description: "As the Blue Team, simulates testing an IaC patch by severing an edge in the graph and verifying if the attacker can still reach the target.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"source_node": {
+						Type:        "string",
+						Description: "The starting node ID.",
+					},
+					"target_node": {
+						Type:        "string",
+						Description: "The destination node ID.",
+					},
+					"cut_edge_from": {
+						Type:        "string",
+						Description: "Node ID from which the severed edge originates.",
+					},
+					"cut_edge_to": {
+						Type:        "string",
+						Description: "Node ID to which the severed edge points.",
+					},
+				},
+				Required: []string{"source_node", "target_node", "cut_edge_from", "cut_edge_to"},
+			},
+		},
+		{
 			Name:        "log_threat_finding",
-			Description: "Writes a confirmed vulnerability to the local .threatmodel.json state file.",
+			Description: "Writes a confirmed vulnerability to the local .threatmodel.json state file. Only invoke this after Blue Team verifies the mitigation works.",
 			InputSchema: InputSchema{
 				Type: "object",
 				Properties: map[string]Property{

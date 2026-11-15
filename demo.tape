@@ -38,7 +38,7 @@ Show
 
 # The visual execution
 Sleep 1.5s
-Type "gemini --mcp threat-sim 'Parse ./examples/complex-lateral-movement. If an attacker breaches the internet-facing ALB... map the access paths to the data lake.'"
+Type "gemini --mcp threat-sim 'Parse ./examples/complex-lateral-movement. Act as a Red Team and map ALL transitive attack vectors from the ALB to the S3 Data Lake. Then, act as a Blue Team, propose dropping the IAM privilege escalation edge, verify the mitigation works, and log the threat.'"
 Sleep 1s
 Enter
 Sleep 18s

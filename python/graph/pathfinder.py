@@ -31,10 +31,10 @@ class Pathfinder:
                 # Add edge with all its attributes
                 self.graph.add_edge(source, target, **edge)
 
-    def simulate_access_path(self, source_node: str, target_node: str) -> Dict[str, Any]:
+    def find_all_attack_paths(self, source_node: str, target_node: str, depth_limit: int = 10) -> Dict[str, Any]:
         """
-        Determines if a path exists between source_node and target_node.
-        Returns a dictionary detailing the path if it exists, or indicating failure.
+        [Red Team] Discovers all simple paths up to a specified depth limit.
+        This allows the Red agent to identify secondary pivot points if the shortest path is patched.
         """
         if source_node not in self.graph:
             return {"error": f"Source node '{source_node}' not found in graph."}
@@ -42,18 +42,51 @@ class Pathfinder:
             return {"error": f"Target node '{target_node}' not found in graph."}
 
         try:
+            generator = nx.all_simple_paths(self.graph, source=source_node, target=target_node, cutoff=depth_limit)
+            paths = list(generator)
+            return {
+                "paths_exist": len(paths) > 0,
+                "paths": paths,
+                "count": len(paths)
+            }
+        except Exception as e:
+            return {
+                "paths_exist": False,
+                "paths": [],
+                "error": str(e)
+            }
+
+    def simulate_access_path(self, source_node: str, target_node: str, cut_edge_from: Optional[str] = None, cut_edge_to: Optional[str] = None) -> Dict[str, Any]:
+        """
+        [Blue Team] Determines if a path exists. Optionally severs an edge before testing
+        to mathematically prove if a specific IaC mitigation breaks the attack chain.
+        """
+        if source_node not in self.graph:
+            return {"error": f"Source node '{source_node}' not found in graph."}
+        if target_node not in self.graph:
+            return {"error": f"Target node '{target_node}' not found in graph."}
+
+        # Apply Ephemeral Mitigation
+        if cut_edge_from and cut_edge_to:
+            if self.graph.has_edge(cut_edge_from, cut_edge_to):
+                self.graph.remove_edge(cut_edge_from, cut_edge_to)
+            else:
+                return {"error": f"Proposed mitigation edge {cut_edge_from}->{cut_edge_to} does not exist."}
+
+        try:
             # Find the shortest path
             path = nx.shortest_path(self.graph, source=source_node, target=target_node)
             return {
                 "path_exists": True,
                 "path": path,
-                "length": len(path) - 1
+                "length": len(path) - 1,
+                "mitigation_successful": False # If a path still exists, the cut failed to protect the target
             }
         except nx.NetworkXNoPath:
             return {
                 "path_exists": False,
                 "path": [],
-                "error": "No path exists between the specified nodes."
+                "mitigation_successful": (cut_edge_from is not None) # Proves the cut blocked the path
             }
 
     def get_node_details(self, node_id: str) -> Optional[Dict[str, Any]]:

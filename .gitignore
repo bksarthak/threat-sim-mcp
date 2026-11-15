@@ -2,6 +2,9 @@
 venv/
 __pycache__/
 *.pyc
+.DS_Store
+build/
+*.spec
 
 # Go
 bin/
@@ -16,6 +19,8 @@ bin/
 # Project specific
 SESSION.md
 .threatmodel.json
+record.sh
+mock_demo.sh
 
 # IDEs
 .idea/
